@@ -4,6 +4,7 @@ clear all
 clc
 
 % this is a test
+<<<<<<< HEAD
 
 % for synaptic scaling (Sullivan & Sa, 2008)
 beta_n = 0.01; %time constant
@@ -18,3 +19,6 @@ total_iter = 45000; % total number of iterations
 
 
 
+=======
+%%woah
+>>>>>>> e74e6a2f9d4064d78cd30d010fb981e09f55616c
