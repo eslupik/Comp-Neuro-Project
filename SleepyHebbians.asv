@@ -35,7 +35,8 @@ TargetBias = 10; %Bias factor for target item trials only (multiply to error)
 %Array to track network reponse for each letter over iterations
 TrackPatternClassification = zeros(1, NumPatterns);
 
-TrainingIterations = 1000;
+Simulations = 200;
+AwakeTraining = 10;
 Sig_b = 1;
 Sig_Hmax = 0;
 
@@ -127,8 +128,9 @@ for Simulation = 1:Simulations
     end
 
     %SLEEP CYCLE MODELING:
+   
     LAYER2_W(LAYER2_W < 0) = LAYER2_W(LAYER2_W < 0) .* Lrate;
-    LAYER3_W(LAYER3_W < 0) = LAYER3_W(LAYER3_W < 0) .* Lrate;
+    LAYER3_W(LAYER2_W < 0) = LAYER3_W(LAYER3_W < 0) .* Lrate;
 
     LAYER2_W(LAYER2_W < -L2_W) = -L2_W;
     LAYER3_W(LAYER3_W < -L3_W) = -L3_W;
