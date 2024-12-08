@@ -14,175 +14,114 @@ num_iter = 200; % number of iterations per sleep cycle
 total_iter = 45000; % total number of iterations
 
 % Ct =γzt +(1−γ)Ct−1
+%% Deep Learning Class Code:
+clear all
 
-%% Problem 1: Setting your neuron variables
+%%%Load LETTERBLOCK
+load('LetterStimuli.mat');
 
-%Fast Spiking Neuron Parameters: (Used for all nodes)
-a = 0.2;
-b = 0.2;
-c = -65;
-d = 2;
+StimH = 30; %image pixel row dimension
+StimW = 30; %image pixel column dimension
+NumPatterns = 26;
+TargetPatterns = [1;5;9;15;21]; %Select target letters (vowels)
+PatternSet = 1; %Select font type (1 of 30)
 
-NoiseScalar = 15;
+NetworkInput = LETTERBLOCK(:,:,PatternSet); %training letters
+NetworkInput = NetworkInput - mean(NetworkInput); %Remove the mean so the network can't use it
+TargetTags = zeros(NumPatterns,1);
+TargetTags(TargetPatterns,1) = 1; %Desired response array
+TargetBias = 10; %Bias factor for target item trials only (multiply to error)
 
-t_start = 1;
-t_stop = 500;
+%Array to track network reponse for each letter over iterations
+TrackPatternClassification = zeros(1, NumPatterns);
 
-PreSynNodes = 100;
-PostSynNodes = 1;
-LearningTrials = 200;
+TrainingIterations = 1000;
+Sig_b = 1;
+Sig_Hmax = 0;
 
-%Learning Rate Constants
-LRScalar = 0.3;
-t_const = 40;
- 
+%Define number of nodes for each layer
+NumNodes_L1 = 900;
+NumNodes_L2 = 90;
+NumNodes_L3 = 1;
 
-%Part II: Create Pre-Syn Stimulus
-StimTime = 26;
-Stimulus = zeros(1, t_stop);
-Stimulus(1, StimTime:t_stop) = 1.8 + (2.2-1.8) .* rand(1, t_stop-StimTime+1);
+%Add bias node to NetworkInput for each letter (all 1's)
+NetworkInput((NumNodes_L1+1),:) = ones(1, NumPatterns);
 
+%Learning Rate
+Lrate = 0.000005;
 
-%PartIII: Initialize Wij
-Wij = (ones(PostSynNodes, PreSynNodes) .* 0.4);
+%Ensure summed weights fall within -5 to +5
+L2_W = (5./NumNodes_L1);
+L3_W = (5./NumNodes_L2);
 
-% WijInitial = Wij; %Saving the weights prior to training for plotting purposes
+%Layer 2 Weights (weights for bias node included)
+LAYER2_W = (rand(NumNodes_L1+1,NumNodes_L2).* (L2_W.*2))-L2_W;
 
-%% Problem 3: Train the Synaptic Weights
+%Layer 3 Weights
+LAYER3_W = (rand(NumNodes_L2,1).* (L3_W.*2))-L3_W;
 
- PostSynFiringRates = zeros(1, LearningTrials);
-
-for LearnTrial = 1:LearningTrials
+%BEGIN TRAINING
+for TrainCycle = 1:TrainingIterations
     
-    %Update Lrate for each trial
-    Lrate = LRScalar .* exp(-(LearnTrial)./t_const);
+    ESUM = 0; %Variable to hold total error for each trial
 
-    %Generate spiking activity of presynaptic nodes:
-    PreSynSpikeTrains = IzhikevichSpikes(a,b,c,d,t_start,t_stop,PreSynNodes,NoiseScalar,Stimulus);
+    for PatternCycle = 1:NumPatterns
 
-    %Model the PSP response of each post-synaptic node: Modified Spike Response Model
-    %Alpha Function
-    %Constants:
-    A = 1;
-    t_peak = 3;
-    N_peak = t_peak .* exp(-1);
-    
-    %Time info (ms):
-    tStart = 0;
-    tEnd = 50;
-    
-    %Initializing counters/accumulators
-    PSPmodel = [];
-    
-    PSP_t_rec = [];
-    PSP_t_count = 0;
-    %Generating an excitatory PSP model
-    for t = tStart:tEnd
-        PSP_t_count = PSP_t_count + 1;
-        PSP_t_rec(1, PSP_t_count) = t;
-        PSP =  A .* ((t .* exp(-t ./ t_peak)) ./ N_peak); %Alpha function (Excitatory)
-        PSPmodel(1, PSP_t_count) = PSP;
-    end
+        %LAYER 1 OPERATION (PASSIVE)
+        L1 = NetworkInput(:,PatternCycle);
 
-    SpikeTriggeredPSP_rec = zeros(PreSynNodes, t_stop);
-    for PreSynNeuron = 1:PreSynNodes
-        SpikeConv = conv(PreSynSpikeTrains(PreSynNeuron, :), PSPmodel, 'full'); %Convolving with an excitatory PSP model
-        SpikeTrigPSPs = SpikeConv(1, 1:t_stop); %Assigning only first 500 elements of function's output to a variable
-    
-        SpikeTriggeredPSP_rec(PreSynNeuron,:) = SpikeTrigPSPs .* Wij(PostSynNodes, PreSynNeuron);
-    end
-
-    TotalPostSynPSP = sum(SpikeTriggeredPSP_rec);
-
-    %Generating Spike Train for the Post-Synaptic Node
-    PostSynSpikeTrain = IzhikevichSpikes(a,b,c,d,t_start,t_stop,1,NoiseScalar,TotalPostSynPSP);
-    
-
-    %Tracking Firing rate for each trial
-    PostSynFiringRates(1, LearnTrial) = sum(PostSynSpikeTrain);
-
-    %Update weights via STDP
-    hLTtime = 25; %Half of the window size
-    PostSpikeTime = hLTtime+1; %26 reference val
-    tau_LTP = 10;
-    tau_LTD = 10.8; %Bias towards LTD
-    LTDScalar = 1.05;
-    
-    for PreSynNeuron = 1:PreSynNodes
-        SpikeCount = 0;
-        STDPw_rec = []; %Storing the changes, gets emptied each time
-        for t = hLTtime:t_stop-hLTtime %Going through both post and pre
-            if(PostSynSpikeTrain(1,t) == 1)
-                SpikeCount = SpikeCount+1; %Used as an index later
-                PreSynWindow = PreSynSpikeTrains(PreSynNeuron,t-hLTtime:t+hLTtime); %Gets the chunk of the presynaptic spike train relative to t (the post-syn spike)
-                PreSpikeTimes = find(PreSynWindow == 1);
-                tD = PostSpikeTime - PreSpikeTimes;
-                if (isempty(tD))
-                    STDPw = 0;
-                else
-                    Mu_tD = mean(tD);
-                    if(Mu_tD >= 0)
-                        STDPw = exp(-Mu_tD ./ tau_LTP);
-                    
-                    else
-                        STDPw = -exp(Mu_tD ./ tau_LTD) .* LTDScalar; %Bias towards LTD
-                    end
-                end
-                STDPw_rec(1, SpikeCount) = STDPw;
-            end
+        %LAYER 2 OPERATIONS (ACTIVE)
+        L2_WgtSum = [];
+        L2_Eval = [];
+        for L2loop = 1:NumNodes_L2
+            L2_WgtSum(L2loop, 1) = sum(L1.*LAYER2_W(:,L2loop));
+            L2_Eval(L2loop,1) = 1./(1+exp(-Sig_b.*(L2_WgtSum(L2loop,1)-Sig_Hmax)));
         end
-            DeltaWij = Lrate .* mean(STDPw_rec);
-            Wij(PostSynNodes, PreSynNeuron) = Wij(PostSynNodes, PreSynNeuron) + DeltaWij; %Updating synaptic weight
-    end
-    Wij(Wij < 0) = 0; %Using logical indexing to replace negative values with 0
 
-end
+        %LAYER 3 OPERATIONS (ACTIVE)
+        L3_WgtSum = [];
+        L3_Eval = [];
+        L3_WgtSum = sum(L2_Eval.*LAYER3_W);
+        L3_Eval = 1./(1+exp(-Sig_b.*(L3_WgtSum-Sig_Hmax)));
 
-%% Problem 4: Plot the Results:
+        TrackPatternClassification(1,PatternCycle) = L3_Eval; %Record output response for each pattern
 
-figure,
-subplot(2, 1, 1);
-scatter(1:LearningTrials, PostSynFiringRates, 10, 'filled');
-xlabel('Learning Trial #');
-ylabel('Post-Synaptic Firing Rate');
+        %CALC OUTPUT ERROR FOR EACH PATTERN
+        PATT_ERROR = TargetTags(PatternCycle, 1)-L3_Eval;
 
-subplot(2, 1, 2);
-bar(1:PreSynNodes, Wij);
-xlabel('Pre-Synaptic Neuron #');
-ylabel('W_i_j');
-sgtitle('Results of Spike-time Dependent Plasticity Learning (Bias Towards LTD)');
-
-%% Problem 2: Generate Izhikevich Spike Trains for each Learning Trial
-
-function IZS = IzhikevichSpikes(a,b,c,d,t_start,t_stop,NumNodes,NoiseScalar,I_ext)
-
-AP_Max = 30;
-SpikeTrain = [];
-
-for Neuron = 1:NumNodes
-    Vm = -70;
-    u = b.*Vm;
-    for t = t_start:t_stop
-        if (I_ext(1,t) ~= 0)
-            Vm = Vm+0.5.*((((0.04.*Vm^2)+(5.*Vm)+140)-u)+((NoiseScalar.*randn)+I_ext(1,t))); %Biological noise is only used when I_ext is not zero
-            Vm = Vm+0.5.*((((0.04.*Vm^2)+(5.*Vm)+140)-u)+((NoiseScalar.*randn)+I_ext(1,t)));
-        else
-            Vm = Vm+0.5.*(((0.04.*Vm^2)+(5.*Vm)+140)-u);
-            Vm = Vm+0.5.*(((0.04.*Vm^2)+(5.*Vm)+140)-u);
+        %APPLY TARGET BIAS
+        if (TargetTags(PatternCycle, 1) == 1)
+            PATT_ERROR = PATT_ERROR .* TargetBias;
         end
-        u = u+(a.*((b.*Vm)-u));
-        
-        if(Vm >= AP_Max)
-            Vm = c;
-            u = u + d;
-            SpikeTrain(Neuron,t) = 1;
-        else
-            SpikeTrain(Neuron,t) = 0;
-        end
-    end
-end
 
-IZS = SpikeTrain;
+        %ACCUMULATE OUTPUT ERROR OVER ALL LETTERS FOR EACH TRIAL
+        ESUM = ESUM + abs(PATT_ERROR);
+
+        %LAYER 2 WEIGHT ADJUSTMENTS
+        L2_Slope = L2_Eval .* (1-L2_Eval);
+        L3_Slope = L3_Eval .* (1-L3_Eval);
+        dOutdW = [];
+        for L2loop = 1:NumNodes_L2
+            dOutdW(:,1) = L1 .* L2_Slope(L2loop,1).* LAYER3_W(L2loop,1).*L3_Slope;
+            LAYER2_W(:,L2loop) = LAYER2_W(:,L2loop) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
+        end
+
+        %LAYER3 WEIGHT ADJUST
+        dOutdW = [];
+        dOutdW(:,1) = L2_Eval.*L3_Slope;
+        LAYER3_W(:,1) = LAYER3_W(:,1) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
+
+    end %End Pattern Cycle
+    
+    TRACK_ERROR(TrainCycle,1) = ESUM;
+
+    subplot(1,2,1);
+    plot(TRACK_ERROR);
+
+    subplot(1,2,2);
+    bar(TrackPatternClassification)
+
+    pause(0.01);
 
 end
 
