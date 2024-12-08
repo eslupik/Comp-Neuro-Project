@@ -14,8 +14,7 @@ num_iter = 200; % number of iterations per sleep cycle
 total_iter = 45000; % total number of iterations
 
 % Ct =γzt +(1−γ)Ct−1
-%% Deep Learning Class Code:
-clear all
+%% Deep Learning Class Code:clear all
 
 %%%Load LETTERBLOCK
 load('LetterStimuli.mat');
@@ -60,71 +59,68 @@ LAYER2_W = (rand(NumNodes_L1+1,NumNodes_L2).* (L2_W.*2))-L2_W;
 %Layer 3 Weights
 LAYER3_W = (rand(NumNodes_L2,1).* (L3_W.*2))-L3_W;
 
-for Simulation = 1:Simulations
+%BEGIN TRAINING
+for TrainCycle = 1:TrainingIterations
+    
+    ESUM = 0; %Variable to hold total error for each trial
 
-    %BEGIN TRAINING
-    for TrainCycle = 1:AwakeTraining
-        
-        ESUM = 0; %Variable to hold total error for each trial
-    
-        for PatternCycle = 1:NumPatterns
-    
-            %LAYER 1 OPERATION (PASSIVE)
-            L1 = NetworkInput(:,PatternCycle);
-    
-            %LAYER 2 OPERATIONS (ACTIVE)
-            L2_WgtSum = [];
-            L2_Eval = [];
-            for L2loop = 1:NumNodes_L2
-                L2_WgtSum(L2loop, 1) = sum(L1.*LAYER2_W(:,L2loop));
-                L2_Eval(L2loop,1) = 1./(1+exp(-Sig_b.*(L2_WgtSum(L2loop,1)-Sig_Hmax)));
-            end
-    
-            %LAYER 3 OPERATIONS (ACTIVE)
-            L3_WgtSum = [];
-            L3_Eval = [];
-            L3_WgtSum = sum(L2_Eval.*LAYER3_W);
-            L3_Eval = 1./(1+exp(-Sig_b.*(L3_WgtSum-Sig_Hmax)));
-    
-            TrackPatternClassification(1,PatternCycle) = L3_Eval; %Record output response for each pattern
-    
-            %CALC OUTPUT ERROR FOR EACH PATTERN
-            PATT_ERROR = TargetTags(PatternCycle, 1)-L3_Eval;
-    
-            %APPLY TARGET BIAS
-            if (TargetTags(PatternCycle, 1) == 1)
-                PATT_ERROR = PATT_ERROR .* TargetBias;
-            end
-    
-            %ACCUMULATE OUTPUT ERROR OVER ALL LETTERS FOR EACH TRIAL
-            ESUM = ESUM + abs(PATT_ERROR);
-    
-            %LAYER 2 WEIGHT ADJUSTMENTS
-            L2_Slope = L2_Eval .* (1-L2_Eval);
-            L3_Slope = L3_Eval .* (1-L3_Eval);
-            dOutdW = [];
-            for L2loop = 1:NumNodes_L2
-                dOutdW(:,1) = L1 .* L2_Slope(L2loop,1).* LAYER3_W(L2loop,1).*L3_Slope;
-                LAYER2_W(:,L2loop) = LAYER2_W(:,L2loop) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
-            end
-    
-            %LAYER3 WEIGHT ADJUST
-            dOutdW = [];
-            dOutdW(:,1) = L2_Eval.*L3_Slope;
-            LAYER3_W(:,1) = LAYER3_W(:,1) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
-        end %End Pattern Cycle
-    
-        TRACK_ERROR(TrainCycle,1) = ESUM;
+    for PatternCycle = 1:NumPatterns
 
-        subplot(1,2,1);
-        plot(TRACK_ERROR);
+        %LAYER 1 OPERATION (PASSIVE)
+        L1 = NetworkInput(:,PatternCycle);
 
-        subplot(1,2,2);
-        bar(TrackPatternClassification)
+        %LAYER 2 OPERATIONS (ACTIVE)
+        L2_WgtSum = [];
+        L2_Eval = [];
+        for L2loop = 1:NumNodes_L2
+            L2_WgtSum(L2loop, 1) = sum(L1.*LAYER2_W(:,L2loop));
+            L2_Eval(L2loop,1) = 1./(1+exp(-Sig_b.*(L2_WgtSum(L2loop,1)-Sig_Hmax)));
+        end
 
-        pause(0.01);
+        %LAYER 3 OPERATIONS (ACTIVE)
+        L3_WgtSum = [];
+        L3_Eval = [];
+        L3_WgtSum = sum(L2_Eval.*LAYER3_W);
+        L3_Eval = 1./(1+exp(-Sig_b.*(L3_WgtSum-Sig_Hmax)));
 
-    end
+        TrackPatternClassification(1,PatternCycle) = L3_Eval; %Record output response for each pattern
+
+        %CALC OUTPUT ERROR FOR EACH PATTERN
+        PATT_ERROR = TargetTags(PatternCycle, 1)-L3_Eval;
+
+        %APPLY TARGET BIAS
+        if (TargetTags(PatternCycle, 1) == 1)
+            PATT_ERROR = PATT_ERROR .* TargetBias;
+        end
+
+        %ACCUMULATE OUTPUT ERROR OVER ALL LETTERS FOR EACH TRIAL
+        ESUM = ESUM + abs(PATT_ERROR);
+
+        %LAYER 2 WEIGHT ADJUSTMENTS
+        L2_Slope = L2_Eval .* (1-L2_Eval);
+        L3_Slope = L3_Eval .* (1-L3_Eval);
+        dOutdW = [];
+        for L2loop = 1:NumNodes_L2
+            dOutdW(:,1) = L1 .* L2_Slope(L2loop,1).* LAYER3_W(L2loop,1).*L3_Slope;
+            LAYER2_W(:,L2loop) = LAYER2_W(:,L2loop) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
+        end
+
+        %LAYER3 WEIGHT ADJUST
+        dOutdW = [];
+        dOutdW(:,1) = L2_Eval.*L3_Slope;
+        LAYER3_W(:,1) = LAYER3_W(:,1) + ((dOutdW(:,1) .* PATT_ERROR) .* Lrate);
+
+    end %End Pattern Cycle
+    
+    TRACK_ERROR(TrainCycle,1) = ESUM;
+
+    subplot(1,2,1);
+    plot(TRACK_ERROR);
+
+    subplot(1,2,2);
+    bar(TrackPatternClassification)
+
+    pause(0.01);
 
     %SLEEP CYCLE MODELING:
     LAYER2_W(LAYER2_W < 0) = LAYER2_W(LAYER2_W < 0) .* Lrate;
